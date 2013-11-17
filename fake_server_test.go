@@ -28,8 +28,8 @@ func TestFakeConnect(t *testing.T) {
 	defer db.Close()
 }
 
-func TestFakeListen(t *testing.T) {
-	db := openFakeConn(t, "TestConnect")
+func TestFakeListenSimple(t *testing.T) {
+	db := openFakeConn(t, "TestListenSimple")
 	defer db.Close()
 
 	_, err := db.Exec("LISTEN")
@@ -37,3 +37,4 @@ func TestFakeListen(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+

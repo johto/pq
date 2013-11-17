@@ -79,7 +79,7 @@ func (s *fakeServer) expectQuery(query string) {
 	if err != nil {
 		errorf("could not read Query: %s", err)
 	}
-	if q.Query != "PING" {
+	if q.Query != query {
 		errorf("unexpected query \"%s\", was expecting \"%s\"", msg, query)
 	}
 }
