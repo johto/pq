@@ -130,26 +130,36 @@ func (s *fakeServer) main() {
 }
 
 func (s *fakeServer) waitForTerminate() {
-	msg := s.recv()
-	if msg.MsgType() != fbproto.MsgTerminateX {
-		errorf("unexpected message %c", msg.MsgType)
+	var message fbcore.Message
+	err := s.stream.Next(&message)
+	if err == io.EOF {
+		// not an error
+		return
 	}
-	// the client should have closed the connection, so ignore the return value
+	if err != nil {
+		panic(err)
+	}
+	if message.MsgType() != 'X' {
+		errorf("expected Terminate, got %#v", message)
+	}
+	// the client should have closed the connection, but just in case
 	s.stream.Close()
 }
 
 func (s *fakeServer) expectQuery(query string) {
-	msg := s.recv()
-	if msg.MsgType() != fbproto.MsgQueryQ {
-		errorf("unexpected message %c", msg.MsgType)
+	q := s.recvQuery()
+	if q.Query != query {
+		errorf("unexpected query \"%s\", was expecting \"%s\"", q.Query, query)
 	}
+}
+
+func (s *fakeServer) recvQuery() *fbproto.Query {
+	msg := s.expectMessage(fbproto.MsgQueryQ)
 	q, err := fbproto.ReadQuery(msg)
 	if err != nil {
 		errorf("could not read Query: %s", err)
 	}
-	if q.Query != query {
-		errorf("unexpected query \"%s\", was expecting \"%s\"", msg, query)
-	}
+	return q
 }
 
 func (s *fakeServer) sendNotify(channel string, payload string) {
@@ -162,11 +172,11 @@ func (s *fakeServer) sendNotify(channel string, payload string) {
 	s.send(&message)
 }
 
-func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...interface{}) {
+func (s *fakeServer) sendErrorResponse(severity string, sqlstate string, errmsg string, v ...interface{}) {
 	formatted := fmt.Sprintf(errmsg, v...)
 	buf := &bytes.Buffer{}
     buf.WriteByte('S')
-    fbbuf.WriteCString(buf, "FATAL")
+    fbbuf.WriteCString(buf, severity)
     buf.WriteByte('C')
     fbbuf.WriteCString(buf, sqlstate)
     buf.WriteByte('M')
@@ -176,16 +186,27 @@ func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...int
 	var message fbcore.Message
 	message.InitFromBytes(fbproto.MsgErrorResponseE, buf.Bytes())
 	s.send(&message)
-	if err := s.stream.Flush(); err != nil {
-		panic(err)
-	}
-	if err := s.stream.Close(); err != nil {
-		panic(err)
-	}
+}
+
+func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...interface{}) {
+	s.sendErrorResponse("FATAL", sqlstate, errmsg, v...)
+	s.Close()
+}
+
+func (s *fakeServer) Close() {
+	s.c.Close()
 }
 
 func (s *fakeServer) sync() {
 	s.c.Sync()
+}
+
+func (s *fakeServer) expectMessage(typ byte) *fbcore.Message {
+	msg := s.recv()
+	if msg.MsgType() != typ {
+		errorf("unexpected message %v ('%c'); was expecting '%c'", msg.MsgType(), msg.MsgType(), typ)
+	}
+	return msg
 }
 
 func (s *fakeServer) recv() *fbcore.Message {
