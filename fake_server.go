@@ -84,22 +84,6 @@ func (s *fakeServer) expectQuery(query string) {
 	}
 }
 
-func (s *fakeServer) respondToPing() {
-	msg := s.recv()
-	if msg.MsgType() != fbproto.MsgQueryQ {
-		errorf("unexpected message %c", msg.MsgType)
-	}
-	q, err := fbproto.ReadQuery(msg)
-	if err != nil {
-		errorf("could not read Query: %s", err)
-	}
-	if q.Query != "PING" {
-		errorf("unexpected query \"%s\", was expecting for PING", msg)
-	}
-	s.sendCommandComplete("PING")
-	s.sendReadyForQuery()
-}
-
 func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...interface{}) {
 	formatted := fmt.Sprintf(errmsg, v...)
 	buf := &bytes.Buffer{}
