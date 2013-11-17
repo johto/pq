@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"bufio"
 	"database/sql/driver"
+	"io"
 	"fmt"
 	"net"
 	"reflect"
+	"sync"
 
 	fbcore		"github.com/deafbybeheading/femebe/core"
 	fbproto		"github.com/deafbybeheading/femebe/proto"
@@ -15,8 +17,73 @@ import (
 
 type pqFakeServerFactory struct{}
 
+type bufferedWriter struct {
+	w io.ReadWriteCloser
+	c chan []byte
+
+	lock sync.Mutex
+	buffered int
+	emptyCond *sync.Cond
+}
+
+func (w *bufferedWriter) senderLoop() {
+	for buf := range w.c {
+		_, err := w.w.Write(buf)
+		if err != nil {
+			panic(err)
+		}
+		w.lock.Lock()
+		w.buffered = w.buffered - len(buf)
+		if w.buffered < 0 {
+			errorf("unexpected negative buffered %d", w.buffered)
+		} else if w.buffered == 0 {
+			w.emptyCond.Broadcast()
+		}
+		w.lock.Unlock()
+	}
+}
+
+func newBufferedWriter(w io.ReadWriteCloser) *bufferedWriter {
+	writer := &bufferedWriter{
+		w: w,
+		c: make(chan []byte, 64),
+	}
+	writer.emptyCond = sync.NewCond(&writer.lock)
+	go writer.senderLoop()
+	return writer
+}
+
+func (w *bufferedWriter) Write(buf []byte) (n int, err error) {
+	cp := make([]byte, len(buf))
+	copy(cp, buf)
+	w.lock.Lock()
+	w.buffered = w.buffered + len(buf)
+	w.lock.Unlock()
+	w.c <- buf
+	return len(buf), nil
+}
+
+func (w *bufferedWriter) Read(buf []byte) (n int, err error) {
+	return w.w.Read(buf)
+}
+
+func (w *bufferedWriter) Sync() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+
+	for w.buffered > 0 {
+		w.emptyCond.Wait()
+	}
+}
+
+func (w *bufferedWriter) Close() error {
+	w.Sync()
+	close(w.c)
+	return w.w.Close()
+}
+
 type fakeServer struct {
-	c net.Conn
+	c *bufferedWriter
 	stream *fbcore.MessageStream
 }
 
@@ -38,11 +105,12 @@ func (d *pqFakeServerFactory) Open(name string) (_ driver.Conn, err error) {
 }
 
 func newFakeServer(c net.Conn) *fakeServer {
-	stream := fbcore.NewFrontendStream(c)
+	writer := newBufferedWriter(c)
+	stream := fbcore.NewFrontendStream(writer)
 
 	return &fakeServer{
 		stream: stream,
-		c: c,
+		c: writer,
 	}
 }
 
@@ -84,6 +152,16 @@ func (s *fakeServer) expectQuery(query string) {
 	}
 }
 
+func (s *fakeServer) sendNotify(channel string, payload string) {
+	var message fbcore.Message
+	buf := &bytes.Buffer{}
+	fbbuf.WriteInt32(buf, 1)
+	fbbuf.WriteCString(buf, channel)
+	fbbuf.WriteCString(buf, payload)
+	message.InitFromBytes(fbproto.MsgNotificationResponseA, buf.Bytes())
+	s.send(&message)
+}
+
 func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...interface{}) {
 	formatted := fmt.Sprintf(errmsg, v...)
 	buf := &bytes.Buffer{}
@@ -104,6 +182,10 @@ func (s *fakeServer) terminateWithError(sqlstate string, errmsg string, v ...int
 	if err := s.stream.Close(); err != nil {
 		panic(err)
 	}
+}
+
+func (s *fakeServer) sync() {
+	s.c.Sync()
 }
 
 func (s *fakeServer) recv() *fbcore.Message {

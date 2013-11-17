@@ -32,7 +32,7 @@ func TestFakeListenSimple(t *testing.T) {
 	db := openFakeConn(t, "TestListenSimple")
 	defer db.Close()
 
-	_, err := db.Exec("LISTEN")
+	_, err := db.Exec("LISTEN foo")
 	if err != nil {
 		t.Fatal(err)
 	}

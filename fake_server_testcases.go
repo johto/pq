@@ -8,7 +8,10 @@ func (s *fakeServer) TestConnect() {
 }
 
 func (s *fakeServer) TestListenSimple() {
-	s.expectQuery("LISTEN")
+	s.sendNotify("foo", "") // ignored
+	s.expectQuery("LISTEN foo")
 	s.sendCommandComplete("LISTEN")
 	s.sendReadyForQuery()
+	s.sendNotify("foo", "") // captured
+	s.sync()
 }
