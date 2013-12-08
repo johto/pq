@@ -447,11 +447,7 @@ func errRecover(err *error) {
 	case runtime.Error:
 		panic(v)
 	case *Error:
-		if v.Fatal() {
-			*err = driver.ErrBadConn
-		} else {
-			*err = v
-		}
+		*err = v
 	case *net.OpError:
 		*err = driver.ErrBadConn
 	case error:
