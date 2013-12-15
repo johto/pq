@@ -375,3 +375,25 @@ func BenchmarkResultParsing(b *testing.B) {
 		res.Close()
 	}
 }
+
+func BenchmarkQueryRow(b *testing.B) {
+	db := openTestConn(b)
+	defer db.Close()
+	err := db.Ping()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var n int64
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err = db.QueryRow("SELECT $1::bigint", 1).Scan(&n)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if n != 1 {
+			panic("n != 1")
+		}
+	}
+}

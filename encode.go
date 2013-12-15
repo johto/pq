@@ -21,16 +21,8 @@ func encode(parameterStatus *parameterStatus, x interface{}, pgtypOid oid.Oid) [
 	case float64:
 		return []byte(fmt.Sprintf("%.17f", v))
 	case []byte:
-		if pgtypOid == oid.T_bytea {
-			return encodeBytea(parameterStatus, v)
-		}
-
-		return v
+		return encodeBytea(parameterStatus, v)
 	case string:
-		if pgtypOid == oid.T_bytea {
-			return []byte(fmt.Sprintf("\\x%x", v))
-		}
-
 		return []byte(v)
 	case bool:
 		return []byte(fmt.Sprintf("%t", v))

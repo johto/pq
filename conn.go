@@ -490,6 +490,80 @@ func (cn *conn) Close() (err error) {
 	return cn.c.Close()
 }
 
+func (cn *conn) prepareAndExecuteStmt(q string, args []driver.Value) (_ *rows, err error) {
+	defer errRecover(&err)
+
+	st := &stmt{cn: cn, name: "", query: q}
+
+	b := multiWriteBuf{cn.scratch[:0], -1}
+
+	b.next('P')
+	b.string(st.name)
+	b.string(q)
+	b.int16(0)
+
+	b.next('D')
+	b.byte('S')
+	b.string(st.name)
+
+	b.next('B')
+	b.string("")
+	b.string(st.name)
+	b.int16(0)
+	b.int16(len(args))
+	for _, x := range args {
+		if x == nil {
+			b.int32(-1)
+		} else {
+			//b := encode(x, st.paramTyps[i])
+			d := encode(&cn.parameterStatus, x, 0)
+			b.int32(len(d))
+			b.bytes(d)
+		}
+	}
+	b.int16(0)
+	b.finish()
+	b.bytes([]byte("E\x00\x00\x00\x09\x00\x00\x00\x00\x00S\x00\x00\x00\x04"))
+	_, err = cn.c.Write(b.ptr)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		t, r := cn.recv1()
+		switch t {
+		case '1', '2':
+		case 't':
+			nparams := int(r.int16())
+			st.paramTyps = make([]oid.Oid, nparams)
+
+			for i := range st.paramTyps {
+				st.paramTyps[i] = r.oid()
+			}
+		case 'T':
+			st.cols, st.rowTyps = parseMeta(r)
+		case 'n':
+			// no data
+		case 'C', 'D':
+			// the query didn't fail, but we can't process this message
+			st.cn.saveMessageType = t
+			st.cn.saveMessageBuffer = r
+			return &rows{st: st}, nil
+		case 'Z':
+			cn.processReadyForQuery(r)
+			return nil, err
+		case 'E':
+			err = parseError(r)
+		default:
+			errorf("unexpected response in extended query: %q", t)
+		}
+	}
+
+	panic("not reached")
+}
+
+
+
 // Implement the "Queryer" interface
 func (cn *conn) Query(query string, args []driver.Value) (_ driver.Rows, err error) {
 	defer errRecover(&err)
@@ -500,13 +574,22 @@ func (cn *conn) Query(query string, args []driver.Value) (_ driver.Rows, err err
 		return cn.simpleQuery(query)
 	}
 
-	st, err := cn.prepareToSimpleStmt(query, "")
-	if err != nil {
-		panic(err)
-	}
+	if true {
+		rows, err := cn.prepareAndExecuteStmt(query, args)
+		if err != nil {
+			panic(err)
+		}
+		return rows, nil
+	} else {
+		st, err := cn.prepareToSimpleStmt(query, "")
+		if err != nil {
+			panic(err)
+		}
 
-	st.exec(args)
-	return &rows{st: st}, nil
+		st.exec(args)
+		return &rows{st: st}, nil
+	}
+	panic("not reached")
 }
 
 // Implement the optional "Execer" interface for one-shot queries

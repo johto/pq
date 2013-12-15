@@ -71,3 +71,45 @@ func (b *writeBuf) byte(c byte) {
 func (b *writeBuf) bytes(v []byte) {
 	*b = append(*b, v...)
 }
+
+type multiWriteBuf struct {
+	ptr []byte
+	lastMsgStart int
+}
+
+func (b *multiWriteBuf) finish() {
+	l := b.ptr[b.lastMsgStart+1:]
+    binary.BigEndian.PutUint32(l, uint32(len(l)))
+}
+
+func (b *multiWriteBuf) byte(c byte) {
+	b.ptr = append(b.ptr, c)
+}
+
+func (b *multiWriteBuf) bytes(v []byte) {
+	b.ptr = append(b.ptr, v...)
+}
+
+func (b *multiWriteBuf) string(v string) {
+	b.ptr = append(b.ptr, (v + "\000")...)
+}
+
+func (b *multiWriteBuf) int32(n int) {
+	x := make([]byte, 4)
+	binary.BigEndian.PutUint32(x, uint32(n))
+	b.bytes(x)
+}
+
+func (b *multiWriteBuf) int16(n int) {
+	x := make([]byte, 2)
+	binary.BigEndian.PutUint16(x, uint16(n))
+	b.bytes(x)
+}
+
+func (b *multiWriteBuf) next(typ byte) {
+	if b.lastMsgStart >= 0 {
+		b.finish()
+	}
+	b.lastMsgStart = len(b.ptr)
+	b.ptr = append(b.ptr, typ, 0, 0, 0, 0)
+}
