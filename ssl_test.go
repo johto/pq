@@ -34,8 +34,7 @@ func openSSLConn(t *testing.T, conninfo string) (*sql.DB, error) {
 		// should never fail
 		t.Fatal(err)
 	}
-	// Do something with the connection to see whether the connection is
-	// working or not.
+	// Do something with the connection to see whether it's working or not.
 	tx, err := db.Begin()
 	if err == nil {
 		return db, tx.Rollback()
