@@ -6,14 +6,13 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
 func shouldSkipSSLTests(t *testing.T) bool {
 	// Require some special variables for testing certificates
-	if os.Getenv("PQSSLCERTTEST_KEY") == "" {
-		return true
-	} else if os.Getenv("PQSSLCERTTEST_CERT") == "" {
+	if os.Getenv("PQSSLCERTTEST_PATH") == "" {
 		return true
 	}
 
@@ -75,10 +74,21 @@ func getCertConninfo(t *testing.T, source string) string {
 	var sslkey string
 	var sslcert string
 
+	certpath := os.Getenv("PQSSLCERTTEST_PATH")
+
 	switch source {
+	case "missingkey":
+		sslkey = "/tmp/filedoesnotexist"
+		sslcert = filepath.Join(certpath, "postgresql.crt")
+	case "missingcert":
+		sslkey = filepath.Join(certpath, "postgresql.key")
+		sslcert = "/tmp/filedoesnotexist"
+	case "certtwice":
+		sslkey = filepath.Join(certpath, "postgresql.crt")
+		sslcert = filepath.Join(certpath, "postgresql.crt")
 	case "valid":
-		sslkey = os.Getenv("PQSSLCERTTEST_KEY")
-		sslcert = os.Getenv("PQSSLCERTTEST_CERT")
+		sslkey = filepath.Join(certpath, "postgresql.key")
+		sslcert = filepath.Join(certpath, "postgresql.crt")
 	default:
 		t.Fatalf("invalid source %q", source)
 	}
@@ -120,3 +130,43 @@ func TestSSLClientCertificates(t *testing.T) {
 	rows.Close()
 }
 
+// Test errors with ssl certificates
+func TestSSLClientCertificatesMissingFiles(t *testing.T) {
+	if shouldSkipSSLTests(t) {
+		t.Log("skipping SSL test")
+		return
+	}
+	// Environment sanity check: should fail without SSL
+	checkSSLSetup(t, "sslmode=disable user=pqgossltest")
+
+	// Key missing, should fail
+	_, err := openSSLConn(t, getCertConninfo(t, "missingkey"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	// should be a PathError
+	_, ok := err.(*os.PathError)
+	if !ok {
+		t.Fatalf("expected PathError, got %#+v", err)
+	}
+
+	// Cert missing, should fail
+	_, err = openSSLConn(t, getCertConninfo(t, "missingcert"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	// should be a PathError
+	_, ok = err.(*os.PathError)
+	if !ok {
+		t.Fatalf("expected PathError, got %#+v", err)
+	}
+
+	// Key has wrong permissions, should fail
+	_, err = openSSLConn(t, getCertConninfo(t, "certtwice"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if err != ErrSSLKeyHasWorldPermissions {
+		t.Fatalf("expected ErrSSLKeyHasWorldPermissions, got %#+v", err)
+	}
+}
