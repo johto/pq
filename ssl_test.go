@@ -34,7 +34,14 @@ func openSSLConn(t *testing.T, conninfo string) (*sql.DB, error) {
 		// should never fail
 		t.Fatal(err)
 	}
-	return db, db.Ping()
+	// Do something with the connection to see whether the connection is
+	// working or not.
+	tx, err := db.Begin()
+	if err == nil {
+		return db, tx.Rollback()
+	}
+	_ = db.Close()
+	return nil, err
 }
 
 func checkSSLSetup(t *testing.T, conninfo string) {
