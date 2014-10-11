@@ -31,9 +31,9 @@ before_install:
   - echo "hostssl   all         pqgosslcert ::1/128               cert" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - echo "host      all         all         ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - sudo install -o postgres -g postgres -m 600 -t /var/lib/postgresql/$PGVERSION/main/ certs/server.key certs/server.crt certs/root.crt
-  - '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_cert_file = \\'server.crt\\'" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
-  - '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_key_file = server.key" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
-  - '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_ca_file = root.crt" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
+  - sh -c '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_cert_file = '"'server.crt'"'" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
+  - sh -c '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_key_file = '"'server.crt'"'" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
+  - sh -c '[ "${PGVERSION}" = "8.4" ] || [ "${PGVERSION}" = "9.0" ] || (echo "ssl_ca_file = '"'server.crt'"'" | sudo tee -a /etc/postgresql/$PGVERSION/main/postgresql.conf)'
   - sudo ls -l /var/lib/postgresql/$PGVERSION/main/
   - sudo cat /etc/postgresql/$PGVERSION/main/postgresql.conf
   - sudo chmod og-xwr certs/postgresql.key
