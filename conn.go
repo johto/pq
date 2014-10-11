@@ -820,6 +820,13 @@ func (cn *conn) ssl(o values) {
 	cn.c = tls.Client(cn.c, &tlsConf)
 }
 
+// This function sets up SSL client certificates based on either the "sslkey"
+// and "sslcert" settings (possibly set via the environment variables PGSSLKEY
+// and PGSSLCERT, respectively), or if they aren't set, from the .postgresql
+// directory in the user's home directory.  If the file paths are set
+// explicitly, the files must exist.  The key file must also not be
+// world-readable, or this function will panic with
+// ErrSSLKeyHasWorldPermissions.
 func (cn *conn) setupSSLClientCertificates(tlsConf *tls.Config, o values) {
 	var missingOk bool
 
