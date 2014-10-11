@@ -76,7 +76,7 @@ func getCertConninfo(t *testing.T, source string) string {
 	var sslcert string
 
 	switch source {
-	case "env":
+	case "valid":
 		sslkey = os.Getenv("PQSSLCERTTEST_KEY")
 		sslcert = os.Getenv("PQSSLCERTTEST_CERT")
 	default:
@@ -108,7 +108,8 @@ func TestSSLClientCertificates(t *testing.T) {
 		t.Fatalf("unexpected error code %q", pge.Code.Name())
 	}
 
-	db, err = openSSLConn(t, getCertConninfo(t, "env"))
+	// Should work
+	db, err = openSSLConn(t, getCertConninfo(t, "valid"))
 	if err != nil {
 		t.Fatal(err)
 	}
