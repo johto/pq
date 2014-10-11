@@ -109,6 +109,9 @@ func TestSSLClientCertificates(t *testing.T) {
 	}
 
 	db, err = openSSLConn(t, getCertConninfo(t, "env"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	rows, err := db.Query("SELECT 1")
 	if err != nil {
 		t.Fatal(err)
