@@ -801,7 +801,7 @@ func (cn *conn) ssl(o values) {
 		errorf(`unsupported sslmode %q; only "require" (default), "verify-full", and "disable" supported`, mode)
 	}
 
-	cn.setupSSLCertKey(&tlsConf, o)
+	cn.setupSSLClientCertificates(&tlsConf, o)
 
 	w := cn.writeBuf(0)
 	w.int32(80877103)
@@ -820,7 +820,7 @@ func (cn *conn) ssl(o values) {
 	cn.c = tls.Client(cn.c, &tlsConf)
 }
 
-func (cn *conn) setupSSLCertKey(tlsConf *tls.Config, o values) {
+func (cn *conn) setupSSLClientCertificates(tlsConf *tls.Config, o values) {
 	var missingOk bool
 
 	sslkey := o.Get("sslkey")
