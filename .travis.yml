@@ -31,6 +31,7 @@ before_install:
   - sudo echo "hostssl   all         pqgosslcert ::1/128               cert" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - sudo echo "host      all         all         ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - sudo cp certs/server.key certs/server.crt certs/root.crt /var/lib/postgresql/$PGVERSION/main/
+  - sudo chmod og-xwr certs/postgresql.key
   - sudo /etc/init.d/postgresql restart
 
 env:
