@@ -48,7 +48,6 @@ func checkSSLSetup(t *testing.T, conninfo string) {
 	if err == nil {
 		t.Fatal("expected error with conninfo=%q", conninfo)
 	}
-	db.Close()
 }
 
 // Connect over SSL and run a simple query to test the basics
