@@ -27,6 +27,7 @@ before_install:
   - sudo echo "host      all         all         ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - sudo cp certs/server.key certs/server.crt certs/root.crt /etc/postgresql/$PGVERSION/main/
   - sudo ls -l /var/lib/postgresql/$PGVERSION/main/
+  - sudo ls -l /etc/postgresql/$PGVERSION/main/
   - sudo chmod og-xwr certs/postgresql.key
   - sudo /etc/init.d/postgresql restart
 
