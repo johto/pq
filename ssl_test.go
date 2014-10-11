@@ -97,6 +97,7 @@ func TestSSLClientCertificates(t *testing.T) {
 	// Should also fail without a valid certificate
 	db, err := openSSLConn(t, "sslmode=require user=pqgosslcert")
 	if err == nil {
+		db.Close()
 		t.Fatal("expected error")
 	}
 	pge, ok := err.(*Error)
@@ -106,7 +107,6 @@ func TestSSLClientCertificates(t *testing.T) {
 	if pge.Code.Name() != "invalid_authorization_specification" {
 		t.Fatalf("unexpected error code %q", pge.Code.Name())
 	}
-	db.Close()
 
 	db, err = openSSLConn(t, getCertConninfo(t, "env"))
 	rows, err := db.Query("SELECT 1")
