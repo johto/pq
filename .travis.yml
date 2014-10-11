@@ -13,22 +13,22 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::="--force-confnew" install postgresql-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-contrib-$PGVERSION
   - sudo chmod 777 /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "local     all         postgres                          trust" > /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "local     all         all                               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostnossl all         pqgossltest 127.0.0.1/32          reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostnossl all         pqgosslcert 127.0.0.1/32          reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostssl   all         pqgossltest 127.0.0.1/32          trust"  >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostssl   all         pqgosslcert 127.0.0.1/32          cert"  >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "host      all         all         127.0.0.1/32          trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostnossl all         pqgossltest ::1/128               reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostnossl all         pqgosslcert ::1/128               reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostssl   all         pqgossltest ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "hostssl   all         pqgosslcert ::1/128               cert" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
-  - sudo echo "host      all         all         ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "local     all         postgres                          trust" > /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "local     all         all                               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostnossl all         pqgossltest 127.0.0.1/32          reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostnossl all         pqgosslcert 127.0.0.1/32          reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostssl   all         pqgossltest 127.0.0.1/32          trust"  >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostssl   all         pqgosslcert 127.0.0.1/32          cert"  >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "host      all         all         127.0.0.1/32          trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostnossl all         pqgossltest ::1/128               reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostnossl all         pqgosslcert ::1/128               reject" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostssl   all         pqgossltest ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "hostssl   all         pqgosslcert ::1/128               cert" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
+  - echo "host      all         all         ::1/128               trust" >> /etc/postgresql/$PGVERSION/main/pg_hba.conf
   - sudo install -o postgres -g postgres -m 600 -t /var/lib/postgresql/$PGVERSION/main/ certs/server.key certs/server.crt certs/root.crt
-  - sudo echo "ssl_cert_file = 'server.crt'" >> /etc/postgresql/$PGVERSION/main/postgresql.conf
-  - sudo echo "ssl_key_file = 'server.key'" >> /etc/postgresql/$PGVERSION/main/postgresql.conf
-  - sudo echo "ssl_ca_file = 'root.crt'" >> /etc/postgresql/$PGVERSION/main/postgresql.conf
+  - echo "ssl_cert_file = 'server.crt'" | sudo tee /etc/postgresql/$PGVERSION/main/postgresql.conf
+  - echo "ssl_key_file = 'server.key'" | sudo tee /etc/postgresql/$PGVERSION/main/postgresql.conf
+  - echo "ssl_ca_file = 'root.crt'" | sudo tee /etc/postgresql/$PGVERSION/main/postgresql.conf
   - sudo ls -l /var/lib/postgresql/$PGVERSION/main/
   - sudo cat /etc/postgresql/$PGVERSION/main/postgresql.conf
   - sudo chmod og-xwr certs/postgresql.key
