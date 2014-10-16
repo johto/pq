@@ -495,8 +495,6 @@ func (cn *conn) simpleExec(q string) (res driver.Result, commandTag string, err 
 func (cn *conn) simpleQuery(q string) (res driver.Rows, err error) {
 	defer cn.errRecover(&err)
 
-	st := &stmt{cn: cn, name: ""}
-
 	b := cn.writeBuf('Q')
 	b.string(q)
 	cn.send(b)
@@ -513,12 +511,7 @@ func (cn *conn) simpleQuery(q string) (res driver.Rows, err error) {
 				cn.bad = true
 				errorf("unexpected message %q in simple query execution", t)
 			}
-			res = &rows{
-				cn: cn,
-				cols: st.cols,
-				rowTyps: st.rowTyps,
-				done: true,
-			}
+			res = &rows{cn: cn, done: true}
 		case 'Z':
 			cn.processReadyForQuery(r)
 			// done
@@ -566,10 +559,14 @@ func (cn *conn) prepareTo(q, stmtName string) (_ *stmt, err error) {
 	b.next('S')
 	cn.send(b)
 
+	err = cn.postParse()
+	if err != nil {
+		return nil, err
+	}
+	err = cn.post
 	for {
 		t, r := cn.recv1()
 		switch t {
-		case '1':
 		case 't':
 			nparams := r.int16()
 			st.paramTyps = make([]oid.Oid, nparams)
@@ -585,6 +582,10 @@ func (cn *conn) prepareTo(q, stmtName string) (_ *stmt, err error) {
 			cn.processReadyForQuery(r)
 			return st, err
 		case 'E':
+			if err != nil {
+				cn.bad = true
+				errorf("unexpected ErrorResponse during extended query")
+			}
 			err = parseError(r)
 		default:
 			cn.bad = true
@@ -678,6 +679,28 @@ func (cn *conn) Exec(query string, args []driver.Value) (_ driver.Result, err er
 	}
 
 	return r, err
+}
+
+func (cn *conn) postParse() (err error) {
+	t, r := cn.recv1()
+	switch t {
+	case '1':
+		return nil
+	case 'E':
+		if err != nil {
+			errorf("unexpected ErrorResponse response to Parse")
+		}
+		err = parseError(r)
+	case 'Z':
+		if err == nil {
+			errorf("unexpected ReadyForQuery response to Parse")
+		}
+		return err
+	default:
+		cn.bad = true
+		errorf("unexpected Parse response: %q", t)
+	}
+	panic("not reached")
 }
 
 func (cn *conn) send(m *writeBuf) {
