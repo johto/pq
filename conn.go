@@ -709,7 +709,14 @@ func (cn *conn) Query(query string, args []driver.Value) (_ driver.Rows, err err
 	}
 
 	if true {
-		return cn.binaryModeQuery(query, args)
+		cn.sendBinaryModeQuery(query, args)
+
+		cn.readParseResponse()
+		cn.readBindResponse()
+		rows := &rows{cn: cn}
+		rows.cols, rows.rowTyps = cn.readPortalDescribeResponse()
+		cn.postExecute()
+		return rows, nil
 	} else {
 		st, err := cn.prepareTo(query, "")
 		if err != nil {
@@ -790,17 +797,6 @@ func (cn *conn) sendBinaryModeQuery(query string, args []driver.Value) {
 
 	b.next('S')
 	cn.send(b)
-}
-
-func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Rows, err error) {
-	cn.sendBinaryModeQuery(query, args)
-
-	cn.readParseResponse()
-	cn.readBindResponse()
-	rows := &rows{cn: cn}
-	rows.cols, rows.rowTyps = cn.readPortalDescribeResponse()
-	cn.postExecute()
-	return rows, nil
 }
 
 // Implement the optional "Execer" interface for one-shot queries
