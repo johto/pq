@@ -20,6 +20,7 @@ func binaryEncode(parameterStatus *parameterStatus, x interface{}) []byte {
 	default:
 		return encode(parameterStatus, x, oid.T_unknown)
 	}
+	panic("not reached")
 }
 
 func encode(parameterStatus *parameterStatus, x interface{}, pgtypOid oid.Oid) []byte {
