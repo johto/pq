@@ -774,13 +774,35 @@ func (cn *conn) sendBinaryModeQuery(query string, args []driver.Value) {
 
 	b.next('B')
 	b.int16(0) // unnamed portal and statement
-	b.int16(0) // TODO: binary args
+
+	// Do one pass over the parameters to see if we're going to send any of
+	// them over in binary.  If we are, create a paramFormats array at the
+	// same time.
+	var paramFormats []int
+	for i, x := range args {
+		_, ok := x.([]byte)
+		if ok {
+			if paramFormats == nil {
+				paramFormats = make([]int, len(args))
+			}
+			paramFormats[i] = 1
+		}
+	}
+	if paramFormats == nil {
+		b.int16(0)
+	} else {
+		b.int16(len(paramFormats))
+		for _, x := range paramFormats {
+			b.int16(x)
+		}
+	}
+
 	b.int16(len(args))
 	for _, x := range args {
 		if x == nil {
 			b.int32(-1)
 		} else {
-			datum := encode(&cn.parameterStatus, x, oid.T_unknown)
+			datum := binaryEncode(&cn.parameterStatus, x)
 			b.int32(len(datum))
 			b.bytes(datum)
 		}
