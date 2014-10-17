@@ -723,6 +723,7 @@ func (cn *conn) Query(query string, args []driver.Value) (_ driver.Rows, err err
 			rowTyps: st.rowTyps,
 		}, nil
 	}
+	panic("not reached")
 }
 
 func (cn *conn) postExecute() {
@@ -754,7 +755,7 @@ func (cn *conn) postExecute() {
 	}
 }
 
-func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Rows, err error) {
+func (cn *conn) sendBinaryModeQuery(query string, args []driver.Value) {
 	if len(args) >= 65536 {
 		errorf("got %d parameters but PostgreSQL only supports 65535 parameters", len(args))
 	}
@@ -789,6 +790,10 @@ func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Row
 
 	b.next('S')
 	cn.send(b)
+}
+
+func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Rows, err error) {
+	cn.sendBinaryModeQuery(query, args)
 
 	cn.readParseResponse()
 	cn.readBindResponse()
@@ -799,7 +804,7 @@ func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Row
 }
 
 // Implement the optional "Execer" interface for one-shot queries
-func (cn *conn) Exec(query string, args []driver.Value) (_ driver.Result, err error) {
+func (cn *conn) Exec(query string, args []driver.Value) (res driver.Result, err error) {
 	if cn.bad {
 		return nil, driver.ErrBadConn
 	}
@@ -809,24 +814,53 @@ func (cn *conn) Exec(query string, args []driver.Value) (_ driver.Result, err er
 	// *much* faster than going through prepare/exec
 	if len(args) == 0 {
 		// ignore commandTag, our caller doesn't care
-		r, _, err := cn.simpleExec(query)
+		res, _, err = cn.simpleExec(query)
+		return res, err
+	}
+
+	if true {
+		cn.sendBinaryModeQuery(query, args)
+
+		cn.readParseResponse()
+		cn.readBindResponse()
+		cn.readPortalDescribeResponse()
+		cn.postExecute()
+
+		// TODO: move this into a function (and the code from stmt.Exec(), too)
+		for {
+			t, r := cn.recv1()
+			switch t {
+			case 'E':
+				err = parseError(r)
+			case 'C':
+				res, _ = cn.parseComplete(r.string())
+			case 'Z':
+				cn.processReadyForQuery(r)
+				// done
+				return
+			case 'T', 'D':
+				// ignore any results
+			default:
+				cn.bad = true
+				errorf("unknown exec response: %q", t)
+			}
+		}
+	} else {
+		// Use the unnamed statement to defer planning until bind time, or else
+		// value-based selectivity estimates cannot be used.
+		st, err := cn.prepareTo(query, "")
+		if err != nil {
+			panic(err)
+		}
+
+		r, err := st.Exec(args)
+		if err != nil {
+			panic(err)
+		}
+
 		return r, err
 	}
-
-	// Use the unnamed statement to defer planning until bind
-	// time, or else value-based selectivity estimates cannot be
-	// used.
-	st, err := cn.prepareTo(query, "")
-	if err != nil {
-		panic(err)
-	}
-
-	r, err := st.Exec(args)
-	if err != nil {
-		panic(err)
-	}
-
-	return r, err
+	panic("not reached")
 }
 
 func (cn *conn) send(m *writeBuf) {
