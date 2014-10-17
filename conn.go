@@ -852,13 +852,7 @@ func (cn *conn) Exec(query string, args []driver.Value) (res driver.Result, err 
 		if err != nil {
 			panic(err)
 		}
-
-		r, err := st.Exec(args)
-		if err != nil {
-			panic(err)
-		}
-
-		return r, err
+		return st.Exec(args)
 	}
 	panic("not reached")
 }
