@@ -466,6 +466,90 @@ func (cn *conn) gname() string {
 	return strconv.FormatInt(int64(cn.namei), 10)
 }
 
+func (cn *conn) awaitSynchronizationPoint() {
+	t, r := cn.recv1()
+	switch t {
+	case 'Z':
+		cn.processReadyForQuery(r)
+		return
+	default:
+		cn.bad = true
+		errorf("unexpected message %q while waiting for synchronization point")
+	}
+}
+
+func (cn *conn) readParseResponse() {
+	t, r := cn.recv1()
+	switch t {
+	case '1':
+		return
+	case 'E':
+		err := parseError(r)
+		cn.awaitSynchronizationPoint()
+		panic(err)
+	default:
+		cn.bad = true
+		errorf("unexpected Parse response %q", t)
+	}
+}
+
+func (cn *conn) readBindResponse() {
+	t, r := cn.recv1()
+	switch t {
+	case '2':
+		return
+	case 'E':
+		err := parseError(r)
+		cn.awaitSynchronizationPoint()
+		panic(err)
+	default:
+		cn.bad = true
+		errorf("unexpected Bind response %q", t)
+	}
+}
+
+func (cn *conn) readStatementDescribeResponse() (paramTyps []oid.Oid, cols []string, rowTyps []oid.Oid) {
+	t, r := cn.recv1()
+	switch t {
+	case 't':
+		nparams := r.int16()
+		paramTyps = make([]oid.Oid, nparams)
+		for i := range paramTyps {
+			paramTyps[i] = r.oid()
+		}
+	case 'E':
+		err := parseError(r)
+		cn.awaitSynchronizationPoint()
+		panic(err)
+	default:
+		cn.bad = true
+		errorf("unexpected Describe response %q", t)
+	}
+
+	// Cheat a bit since the result should be exactly the same as when
+	// describing a portal.
+	cols, rowTyps = cn.readPortalDescribeResponse()
+	return paramTyps, cols, rowTyps
+}
+
+func (cn *conn) readPortalDescribeResponse() (cols []string, rowTyps []oid.Oid) {
+	t, r := cn.recv1()
+	switch t {
+	case 'T':
+		return parseMeta(r)
+	case 'n':
+		return nil, nil
+	case 'E':
+		err := parseError(r)
+		cn.awaitSynchronizationPoint()
+		panic(err)
+	default:
+		cn.bad = true
+		errorf("unexpected Describe response %q", t)
+	}
+	panic("not reached")
+}
+
 func (cn *conn) simpleExec(q string) (res driver.Result, commandTag string, err error) {
 	b := cn.writeBuf('Q')
 	b.string(q)
@@ -559,25 +643,12 @@ func (cn *conn) prepareTo(q, stmtName string) (_ *stmt, err error) {
 	b.next('S')
 	cn.send(b)
 
-	err = cn.postParse()
-	if err != nil {
-		return nil, err
-	}
-	err = cn.post
+	cn.readParseResponse()
+	st.paramTyps, st.cols, st.rowTyps = cn.readStatementDescribeResponse()
+
 	for {
 		t, r := cn.recv1()
 		switch t {
-		case 't':
-			nparams := r.int16()
-			st.paramTyps = make([]oid.Oid, nparams)
-
-			for i := range st.paramTyps {
-				st.paramTyps[i] = r.oid()
-			}
-		case 'T':
-			st.cols, st.rowTyps = parseMeta(r)
-		case 'n':
-			// no data
 		case 'Z':
 			cn.processReadyForQuery(r)
 			return st, err
@@ -637,17 +708,94 @@ func (cn *conn) Query(query string, args []driver.Value) (_ driver.Rows, err err
 		return cn.simpleQuery(query)
 	}
 
-	st, err := cn.prepareTo(query, "")
-	if err != nil {
-		panic(err)
+	if true {
+		return cn.binaryModeQuery(query, args)
+	} else {
+		st, err := cn.prepareTo(query, "")
+		if err != nil {
+			panic(err)
+		}
+
+		st.exec(args)
+		return &rows{
+			cn: cn,
+			cols: st.cols,
+			rowTyps: st.rowTyps,
+		}, nil
+	}
+}
+
+func (cn *conn) postExecute() {
+	// Work around a bug in sql.DB.QueryRow: in Go 1.2 and earlier it ignores
+	// any errors from rows.Next, which masks errors that happened during the
+	// execution of the query.  To avoid the problem in common cases, we wait
+	// here for one more message from the database.  If it's not an error the
+	// query will likely succeed (or perhaps has already, if it's a
+	// CommandComplete), so we push the message into the conn struct; recv1
+	// will return it as the next message for rows.Next or rows.Close.
+	// However, if it's an error, we wait until ReadyForQuery and then return
+	// the error to our caller.
+	var err error
+	for {
+		t, r := cn.recv1()
+		switch t {
+		case 'E':
+			err = parseError(r)
+			cn.awaitSynchronizationPoint()
+			panic(err)
+		case 'C', 'D', 'I':
+			// the query didn't fail, but we can't process this message
+			cn.saveMessage(t, r)
+			return
+		default:
+			cn.bad = true
+			errorf("unexpected message during extended query execution: %q", t)
+		}
+	}
+}
+
+func (cn *conn) binaryModeQuery(query string, args []driver.Value) (_ driver.Rows, err error) {
+	if len(args) >= 65536 {
+		errorf("got %d parameters but PostgreSQL only supports 65535 parameters", len(args))
 	}
 
-	st.exec(args)
-	return &rows{
-		cn: cn,
-		cols: st.cols,
-		rowTyps: st.rowTyps,
-	}, nil
+	b := cn.writeBuf('P')
+	b.byte(0) // unnamed statement
+	b.string(query)
+	b.int16(0)
+
+	b.next('B')
+	b.int16(0) // unnamed portal and statement
+	b.int16(0) // TODO: binary args
+	b.int16(len(args))
+	for _, x := range args {
+		if x == nil {
+			b.int32(-1)
+		} else {
+			datum := encode(&cn.parameterStatus, x, oid.T_unknown)
+			b.int32(len(datum))
+			b.bytes(datum)
+		}
+	}
+	b.int16(0)
+
+	b.next('D')
+	b.byte('P')
+	b.byte(0) // unnamed statement
+
+	b.next('E')
+	b.byte(0)
+	b.int32(0)
+
+	b.next('S')
+	cn.send(b)
+
+	cn.readParseResponse()
+	cn.readBindResponse()
+	rows := &rows{cn: cn}
+	rows.cols, rows.rowTyps = cn.readPortalDescribeResponse()
+	cn.postExecute()
+	return rows, nil
 }
 
 // Implement the optional "Execer" interface for one-shot queries
@@ -679,28 +827,6 @@ func (cn *conn) Exec(query string, args []driver.Value) (_ driver.Result, err er
 	}
 
 	return r, err
-}
-
-func (cn *conn) postParse() (err error) {
-	t, r := cn.recv1()
-	switch t {
-	case '1':
-		return nil
-	case 'E':
-		if err != nil {
-			errorf("unexpected ErrorResponse response to Parse")
-		}
-		err = parseError(r)
-	case 'Z':
-		if err == nil {
-			errorf("unexpected ReadyForQuery response to Parse")
-		}
-		return err
-	default:
-		cn.bad = true
-		errorf("unexpected Parse response: %q", t)
-	}
-	panic("not reached")
 }
 
 func (cn *conn) send(m *writeBuf) {
@@ -1176,7 +1302,7 @@ func (st *stmt) exec(v []driver.Value) {
 	}
 
 	w := st.cn.writeBuf('B')
-	w.byte(0)
+	w.byte(0) // unnamed portal
 	w.string(st.name)
 	w.int16(0)
 	w.int16(len(v))
@@ -1198,60 +1324,8 @@ func (st *stmt) exec(v []driver.Value) {
 	w.next('S')
 	st.cn.send(w)
 
-	var err error
-	for {
-		t, r := st.cn.recv1()
-		switch t {
-		case 'E':
-			err = parseError(r)
-		case '2':
-			if err != nil {
-				panic(err)
-			}
-			goto workaround
-		case 'Z':
-			st.cn.processReadyForQuery(r)
-			if err != nil {
-				panic(err)
-			}
-			return
-		default:
-			st.cn.bad = true
-			errorf("unexpected bind response: %q", t)
-		}
-	}
-
-	// Work around a bug in sql.DB.QueryRow: in Go 1.2 and earlier it ignores
-	// any errors from rows.Next, which masks errors that happened during the
-	// execution of the query.  To avoid the problem in common cases, we wait
-	// here for one more message from the database.  If it's not an error the
-	// query will likely succeed (or perhaps has already, if it's a
-	// CommandComplete), so we push the message into the conn struct; recv1
-	// will return it as the next message for rows.Next or rows.Close.
-	// However, if it's an error, we wait until ReadyForQuery and then return
-	// the error to our caller.
-workaround:
-	for {
-		t, r := st.cn.recv1()
-		switch t {
-		case 'E':
-			err = parseError(r)
-		case 'C', 'D', 'I':
-			// the query didn't fail, but we can't process this message
-			st.cn.saveMessage(t, r)
-			return
-		case 'Z':
-			if err == nil {
-				st.cn.bad = true
-				errorf("unexpected ReadyForQuery during extended query execution")
-			}
-			st.cn.processReadyForQuery(r)
-			panic(err)
-		default:
-			st.cn.bad = true
-			errorf("unexpected message during query execution: %q", t)
-		}
-	}
+	st.cn.readBindResponse()
+	st.cn.postExecute()
 }
 
 func (st *stmt) NumInput() int {
