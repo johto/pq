@@ -266,11 +266,21 @@ func (l *ListenerConn) sendSimpleQuery(q string) (err error) {
 // After a call to ExecSimpleQuery has returned an executed=false value, the
 // connection has either been closed or will be closed shortly thereafter, and
 // all subsequently executed queries will return an error.
-func (l *ListenerConn) ExecSimpleQuery(q string) (executed bool, err error) {
+func (l *ListenerConn) ExecSimpleQueryDeadline(q string, deadline time.Time) (executed bool, err error) {
 	if err = l.acquireSenderLock(); err != nil {
 		return false, err
 	}
 	defer l.releaseSenderLock()
+
+	if !deadline.IsZero() {
+		// Just go ahead without a deadline if we can't set one.  Better than
+		// failing here, I guess.
+		err = l.cn.c.SetDeadline(deadline)
+		if err != nil {
+			// XXX?
+			return false, err
+		}
+	}
 
 	err = l.sendSimpleQuery(q)
 	if err != nil {
@@ -302,6 +312,12 @@ func (l *ListenerConn) ExecSimpleQuery(q string) (executed bool, err error) {
 				panic("m.err != nil")
 			}
 			// done; err might or might not be set
+			if !deadline.IsZero() {
+				dlerr := l.cn.c.SetDeadline(deadline)
+				if err == nil {
+					err = dlerr
+				}
+			}
 			return true, err
 
 		case 'E':
@@ -316,6 +332,11 @@ func (l *ListenerConn) ExecSimpleQuery(q string) (executed bool, err error) {
 			return false, fmt.Errorf("unknown response for simple query: %q", m.typ)
 		}
 	}
+}
+
+// Calls ExecSimpleQueryDeadline with a zero time.Time (i.e. no deadline)
+func (l *ListenerConn) ExecSimpleQuery(q string) (executed bool, err error) {
+	return l.ExecSimpleQueryDeadline(q, time.Time{})
 }
 
 func (l *ListenerConn) Close() error {
