@@ -1322,14 +1322,18 @@ func (st *stmt) exec(v []driver.Value) {
 	}
 	w.bytes(st.colFmtData)
 
-	w.next('E')
+	w.next('L')
 	w.byte(0)
-	w.int32(0)
+	//w.int32(0)
 
 	w.next('S')
 	cn.send(w)
 
 	cn.readBindResponse()
+
+	/* XXX from ExecuteAndFetch */
+	st.colNames, st.colFmts, st.colTyps = cn.readPortalDescribeResponse()
+
 	cn.postExecuteWorkaround()
 
 }
